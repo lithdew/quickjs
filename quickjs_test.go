@@ -1,9 +1,23 @@
 package quickjs
 
 import (
+	"errors"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
+
+func TestFunctionThrowError(t *testing.T) {
+	expected := errors.New("expected error")
+
+	ctx := NewRuntime().NewContext()
+	ctx.Globals().SetFunction("A", func(ctx Context, this Value, args []Value) Value {
+		return ctx.ThrowError(expected)
+	})
+
+	_, actual := ctx.Eval("A()")
+	require.Error(t, actual)
+	require.EqualValues(t, "Error: "+expected.Error(), actual.Error())
+}
 
 func TestFunction(t *testing.T) {
 	rt := NewRuntime()

@@ -145,6 +145,13 @@ func (c Context) Uninitialized() Value {
 	return val
 }
 
+func (c Context) Error(err error) Value {
+	val := Value{ctx: c.ref, ref: C.JS_NewError(c.ref)}
+	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	val.Set("message", c.String(err.Error()))
+	return val
+}
+
 func (c Context) Bool(b bool) Value {
 	bv := 0
 	if b {
@@ -226,11 +233,13 @@ func (c Context) Globals() Value {
 	return val
 }
 
-func (c Context) Throw(err Value) Value {
-	val := Value{ctx: c.ref, ref: C.JS_Throw(c.ref, err.ref)}
+func (c Context) Throw(v Value) Value {
+	val := Value{ctx: c.ref, ref: C.JS_Throw(c.ref, v.ref)}
 	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
 	return val
 }
+
+func (c Context) ThrowError(err error) Value { return c.Throw(c.Error(err)) }
 
 func (c Context) ThrowSyntaxError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
@@ -314,6 +323,8 @@ type Value struct {
 	ref C.JSValue
 }
 
+func (v Value) Context() Context { return Context{ref: v.ctx} }
+
 func (v Value) Bool() bool { return C.JS_ToBool(v.ctx, v.ref) == 1 }
 
 func (v Value) String() string {
@@ -388,6 +399,8 @@ func (v Value) Set(name string, val Value) {
 	defer C.free(unsafe.Pointer(namePtr))
 	C.JS_SetPropertyStr(v.ctx, v.ref, namePtr, val.ref)
 }
+
+func (v Value) SetFunction(name string, fn Function) { v.Set(name, v.Context().Function(fn)) }
 
 type Error struct {
 	Cause string
