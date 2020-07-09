@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"runtime"
 	"sync"
 	"unsafe"
 )
@@ -23,15 +22,13 @@ type Runtime struct {
 }
 
 func NewRuntime() Runtime {
-	rt := Runtime{ref: C.JS_NewRuntime()}
-	runtime.SetFinalizer(&rt, func(rt *Runtime) { C.JS_FreeRuntime(rt.ref) })
-	return rt
+	return Runtime{ref: C.JS_NewRuntime()}
 }
+
+func (r Runtime) Free() { C.JS_FreeRuntime(r.ref) }
 
 func (r Runtime) NewContext() Context {
 	ctx := Context{ref: C.JS_NewContext(r.ref)}
-	runtime.SetFinalizer(&ctx, func(ctx *Context) { C.JS_FreeContext(ctx.ref) })
-
 	C.JS_AddIntrinsicBigFloat(ctx.ref)
 	C.JS_AddIntrinsicBigDecimal(ctx.ref)
 	C.JS_AddIntrinsicOperators(ctx.ref)
@@ -83,10 +80,10 @@ func freeFuncPtr(ptr unsafe.Pointer) {
 	if ptr == nil {
 		return
 	}
+	defer C.free(ptr)
 	funcPtrLock.Lock()
 	defer funcPtrLock.Unlock()
 	delete(funcPtrStore, ptr)
-	C.free(ptr)
 }
 
 //export proxy
@@ -107,12 +104,14 @@ type Context struct {
 	ref *C.JSContext
 }
 
+func (c Context) Free() { C.JS_FreeContext(c.ref) }
+
 func (c Context) Function(fp Function) Value {
 	val := Value{ctx: c.ref, ref: C.JS_NewObjectClass(c.ref, C.int(funcPtrClassID))}
 	if val.IsException() {
 		return val
 	}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	defer val.Free()
 
 	funcPtr := storeFuncPtr(fp)
 	C.JS_SetOpaque(val.ref, funcPtr)
@@ -121,32 +120,23 @@ func (c Context) Function(fp Function) Value {
 	length := C.int(1)
 	magic := C.int(0)
 
-	fn := Value{ctx: c.ref, ref: C.JS_NewCFunctionData(c.ref, proxy, length, magic, C.int(1), &val.ref)}
-	runtime.SetFinalizer(&fn, func(fn *Value) { C.JS_FreeValue(fn.ctx, fn.ref); freeFuncPtr(funcPtr) })
-	return fn
+	return Value{ctx: c.ref, ref: C.JS_NewCFunctionData(c.ref, proxy, length, magic, C.int(1), &val.ref)}
 }
 
 func (c Context) Null() Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewNull()}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewNull()}
 }
 
 func (c Context) Undefined() Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewUndefined()}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewUndefined()}
 }
 
 func (c Context) Uninitialized() Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewUninitialized()}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewUninitialized()}
 }
 
 func (c Context) Error(err error) Value {
 	val := Value{ctx: c.ref, ref: C.JS_NewError(c.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
 	val.Set("message", c.String(err.Error()))
 	return val
 }
@@ -156,57 +146,39 @@ func (c Context) Bool(b bool) Value {
 	if b {
 		bv = 1
 	}
-	val := Value{ctx: c.ref, ref: C.JS_NewBool(c.ref, C.int(bv))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewBool(c.ref, C.int(bv))}
 }
 
 func (c Context) Int32(v int32) Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewInt32(c.ref, C.int32_t(v))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewInt32(c.ref, C.int32_t(v))}
 }
 
 func (c Context) Int64(v int64) Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewInt64(c.ref, C.int64_t(v))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewInt64(c.ref, C.int64_t(v))}
 }
 
 func (c Context) Uint32(v uint32) Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewUint32(c.ref, C.uint32_t(v))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewUint32(c.ref, C.uint32_t(v))}
 }
 
 func (c Context) BigUint64(v uint64) Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewBigUint64(c.ref, C.uint64_t(v))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewBigUint64(c.ref, C.uint64_t(v))}
 }
 
 func (c Context) Float64(v float64) Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewFloat64(c.ref, C.double(v))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewFloat64(c.ref, C.double(v))}
 }
 
 func (c Context) String(v string) Value {
 	ptr := C.CString(v)
 	defer C.free(unsafe.Pointer(ptr))
-
-	val := Value{ctx: c.ref, ref: C.JS_NewString(c.ref, ptr)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewString(c.ref, ptr)}
 }
 
 func (c Context) Atom(v string) Atom {
 	ptr := C.CString(v)
 	defer C.free(unsafe.Pointer(ptr))
-
-	atom := Atom{ctx: c.ref, ref: C.JS_NewAtom(c.ref, ptr)}
-	runtime.SetFinalizer(&atom, func(atom *Atom) { C.JS_FreeAtom(atom.ctx, atom.ref) })
-	return atom
+	return Atom{ctx: c.ref, ref: C.JS_NewAtom(c.ref, ptr)}
 }
 
 func (c Context) Eval(code string) (Value, error) { return c.EvalFile(code, "code") }
@@ -219,7 +191,6 @@ func (c Context) EvalFile(code, filename string) (Value, error) {
 	defer C.free(unsafe.Pointer(filenamePtr))
 
 	val := Value{ctx: c.ref, ref: C.JS_Eval(c.ref, codePtr, C.size_t(len(code)), filenamePtr, C.int(0))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
 	if val.IsException() {
 		return val, c.Exception().Error()
 	}
@@ -227,90 +198,60 @@ func (c Context) EvalFile(code, filename string) (Value, error) {
 }
 
 func (c Context) Globals() Value {
-	val := Value{ctx: c.ref, ref: C.JS_GetGlobalObject(c.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_GetGlobalObject(c.ref)}
 }
 
 func (c Context) Throw(v Value) Value {
-	val := Value{ctx: c.ref, ref: C.JS_Throw(c.ref, v.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_Throw(c.ref, v.ref)}
 }
 
 func (c Context) ThrowError(err error) Value { return c.Throw(c.Error(err)) }
 
 func (c Context) ThrowSyntaxError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
-
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-
-	val := Value{ctx: c.ref, ref: C.ThrowSyntaxError(c.ref, causePtr)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.ThrowSyntaxError(c.ref, causePtr)}
 }
 
 func (c Context) ThrowTypeError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
-
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-
-	val := Value{ctx: c.ref, ref: C.ThrowTypeError(c.ref, causePtr)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.ThrowTypeError(c.ref, causePtr)}
 }
 
 func (c Context) ThrowReferenceError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
-
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-
-	val := Value{ctx: c.ref, ref: C.ThrowReferenceError(c.ref, causePtr)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.ThrowReferenceError(c.ref, causePtr)}
 }
 
 func (c Context) ThrowRangeError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
-
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-
-	val := Value{ctx: c.ref, ref: C.ThrowRangeError(c.ref, causePtr)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.ThrowRangeError(c.ref, causePtr)}
 }
 
 func (c Context) ThrowInternalError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
-
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-
-	val := Value{ctx: c.ref, ref: C.ThrowInternalError(c.ref, causePtr)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.ThrowInternalError(c.ref, causePtr)}
 }
 
 func (c Context) Exception() Value {
-	val := Value{ctx: c.ref, ref: C.JS_GetException(c.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_GetException(c.ref)}
 }
 
 func (c Context) Object() Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewObject(c.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewObject(c.ref)}
 }
 
 func (c Context) Array() Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewArray(c.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: c.ref, ref: C.JS_NewArray(c.ref)}
 }
 
 type Atom struct {
@@ -320,13 +261,12 @@ type Atom struct {
 
 func (a Atom) String() string {
 	val := C.JS_AtomToCString(a.ctx, a.ref)
+	//defer C.JS_FreeCString(a.ctx, val)
 	return C.GoString(val)
 }
 
 func (a Atom) Value() Value {
-	val := Value{ctx: a.ctx, ref: C.JS_AtomToValue(a.ctx, a.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: a.ctx, ref: C.JS_AtomToValue(a.ctx, a.ref)}
 }
 
 type Value struct {
@@ -334,13 +274,15 @@ type Value struct {
 	ref C.JSValue
 }
 
+func (v Value) Free() { C.JS_FreeValue(v.ctx, v.ref) }
+
 func (v Value) Context() Context { return Context{ref: v.ctx} }
 
 func (v Value) Bool() bool { return C.JS_ToBool(v.ctx, v.ref) == 1 }
 
 func (v Value) String() string {
 	val := C.JS_ToCString(v.ctx, v.ref)
-	runtime.SetFinalizer(&v, func(v *Value) { C.JS_FreeCString(v.ctx, val) })
+	//defer C.JS_FreeCString(v.ctx, val)
 	return C.GoString(val)
 }
 
@@ -393,22 +335,15 @@ func (v Value) BigFloat() *big.Float {
 func (v Value) Get(name string) Value {
 	namePtr := C.CString(name)
 	defer C.free(unsafe.Pointer(namePtr))
-
-	val := Value{ctx: v.ctx, ref: C.JS_GetPropertyStr(v.ctx, v.ref, namePtr)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: v.ctx, ref: C.JS_GetPropertyStr(v.ctx, v.ref, namePtr)}
 }
 
 func (v Value) GetByAtom(atom Atom) Value {
-	val := Value{ctx: v.ctx, ref: C.JS_GetProperty(v.ctx, v.ref, atom.ref)}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: v.ctx, ref: C.JS_GetProperty(v.ctx, v.ref, atom.ref)}
 }
 
 func (v Value) GetByUint32(idx uint32) Value {
-	val := Value{ctx: v.ctx, ref: C.JS_GetPropertyUint32(v.ctx, v.ref, C.uint32_t(idx))}
-	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
-	return val
+	return Value{ctx: v.ctx, ref: C.JS_GetPropertyUint32(v.ctx, v.ref, C.uint32_t(idx))}
 }
 
 func (v Value) SetByAtom(atom Atom, val Value) {
@@ -431,7 +366,9 @@ func (v Value) Set(name string, val Value) {
 	C.JS_SetPropertyStr(v.ctx, v.ref, namePtr, val.ref)
 }
 
-func (v Value) SetFunction(name string, fn Function) { v.Set(name, v.Context().Function(fn)) }
+func (v Value) SetFunction(name string, fn Function) {
+	v.Set(name, v.Context().Function(fn))
+}
 
 type Error struct {
 	Cause string
@@ -484,14 +421,10 @@ func (v Value) PropertyNames() ([]PropertyEnum, error) {
 	entries := (*[1 << 30]C.JSPropertyEnum)(unsafe.Pointer(ptr))
 
 	names := make([]PropertyEnum, uint32(size))
-	runtime.SetFinalizer(&names, func(_ *[]PropertyEnum) { C.js_free(v.ctx, unsafe.Pointer(ptr)) })
 
 	for i := 0; i < len(names); i++ {
 		names[i].IsEnumerable = entries[i].is_enumerable == 1
-
-		atom := Atom{ctx: v.ctx, ref: entries[i].atom}
-		runtime.SetFinalizer(&atom, func(atom *Atom) { C.JS_FreeAtom(atom.ctx, atom.ref) })
-		names[i].Atom = atom
+		names[i].Atom = Atom{ctx: v.ctx, ref: entries[i].atom}
 	}
 
 	return names, nil
