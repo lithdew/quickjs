@@ -12,8 +12,7 @@ import (
 /*
 #cgo CFLAGS: -D_GNU_SOURCE
 #cgo CFLAGS: -DCONFIG_BIGNUM
-
-#cgo LDFLAGS: -lm -lpthread -static
+#cgo LDFLAGS: -Wl,-Bstatic -lpthread -Wl,-Bdynamic -lm
 
 #include "bridge.h"
 */
