@@ -3,6 +3,7 @@ package quickjs
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"sync"
 	"unsafe"
@@ -27,6 +28,8 @@ func NewRuntime() Runtime {
 	return rt
 }
 
+func (r Runtime) RunGC() { C.JS_RunGC(r.ref) }
+
 func (r Runtime) Free() { C.JS_FreeRuntime(r.ref) }
 
 func (r Runtime) NewContext() Context {
@@ -40,9 +43,15 @@ func (r Runtime) NewContext() Context {
 
 func (r Runtime) ExecutePendingJob() (Context, error) {
 	var ctx Context
-	if C.JS_ExecutePendingJob(r.ref, &ctx.ref) < 0 {
+
+	err := C.JS_ExecutePendingJob(r.ref, &ctx.ref)
+	if err <= 0 {
+		if err == 0 {
+			return ctx, io.EOF
+		}
 		return ctx, ctx.Exception().Error()
 	}
+
 	return ctx, nil
 }
 
@@ -112,13 +121,12 @@ func (c Context) Function(fp Function) Value {
 	if val.IsException() {
 		return val
 	}
-	defer val.Free()
 
 	funcPtr := storeFuncPtr(fp)
 	C.JS_SetOpaque(val.ref, funcPtr)
 
 	proxy := (*C.JSCFunctionData)(unsafe.Pointer(C.InvokeProxy))
-	length := C.int(1)
+	length := C.int(0)
 	magic := C.int(0)
 
 	return Value{ctx: c.ref, ref: C.JS_NewCFunctionData(c.ref, proxy, length, magic, C.int(1), &val.ref)}
