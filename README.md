@@ -18,7 +18,7 @@ $ go get github.com/lithdew/quickjs
 
 ## Example
 
-The full example code below may be found by clicking [here](examples/main.go).
+The full example code below may be found by clicking [here](examples/main.go). Find more API examples [here](quickjs_test.go).
 
 ```go
 package main
