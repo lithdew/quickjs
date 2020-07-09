@@ -14,7 +14,9 @@ func check(err error) {
 }
 
 func main() {
-	ctx := quickjs.NewRuntime().NewContext()
+	rt := quickjs.NewRuntime()
+	ctx := rt.NewContext()
+
 	globals := ctx.Globals()
 
 	// Test evaluating template strings.

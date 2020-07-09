@@ -41,6 +41,14 @@ func (r Runtime) NewContext() Context {
 	return ctx
 }
 
+func (r Runtime) ExecutePendingJob() (Context, error) {
+	var ctx Context
+	if C.JS_ExecutePendingJob(r.ref, &ctx.ref) < 0 {
+		return ctx, ctx.Exception().Error()
+	}
+	return ctx, nil
+}
+
 type Function func(ctx Context, this Value, args []Value) Value
 
 var funcPtrLock sync.Mutex
