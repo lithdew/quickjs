@@ -260,9 +260,7 @@ type Atom struct {
 }
 
 func (a Atom) String() string {
-	val := C.JS_AtomToCString(a.ctx, a.ref)
-	//defer C.JS_FreeCString(a.ctx, val)
-	return C.GoString(val)
+	return C.GoString(C.JS_AtomToCString(a.ctx, a.ref))
 }
 
 func (a Atom) Value() Value {
@@ -281,9 +279,7 @@ func (v Value) Context() Context { return Context{ref: v.ctx} }
 func (v Value) Bool() bool { return C.JS_ToBool(v.ctx, v.ref) == 1 }
 
 func (v Value) String() string {
-	val := C.JS_ToCString(v.ctx, v.ref)
-	//defer C.JS_FreeCString(v.ctx, val)
-	return C.GoString(val)
+	return C.GoString(C.JS_ToCString(v.ctx, v.ref))
 }
 
 func (v Value) Int64() int64 {
