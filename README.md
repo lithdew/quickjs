@@ -6,7 +6,9 @@
 
 Go bindings to [QuickJS](https://bellard.org/quickjs/): a fast, small, and embeddable [ES2020](https://tc39.github.io/ecma262/) JavaScript interpreter.
 
-These bindings are WIP and do not match full parity with QuickJS' API, though expose just enough features to be usable. The version of QuickJS that these bindings bind to may be located [here](version.h).
+These bindings are a WIP and do not match full parity with QuickJS' API, though expose just enough features to be usable. The version of QuickJS that these bindings bind to may be located [here](version.h).
+
+These bindings have been tested to cross-compile and run successfully on Linux, Windows, and Mac using gcc-7 and mingw32 without any addtional compiler or linker flags.
 
 ## Usage
 
