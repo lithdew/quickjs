@@ -22,7 +22,9 @@ type Runtime struct {
 }
 
 func NewRuntime() Runtime {
-	return Runtime{ref: C.JS_NewRuntime()}
+	rt := Runtime{ref: C.JS_NewRuntime()}
+	C.JS_SetCanBlock(rt.ref, C.int(1))
+	return rt
 }
 
 func (r Runtime) Free() { C.JS_FreeRuntime(r.ref) }
@@ -33,7 +35,6 @@ func (r Runtime) NewContext() Context {
 	C.JS_AddIntrinsicBigDecimal(ctx.ref)
 	C.JS_AddIntrinsicOperators(ctx.ref)
 	C.JS_EnableBignumExt(ctx.ref, C.int(1))
-
 	return ctx
 }
 
