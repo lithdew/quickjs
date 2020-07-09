@@ -302,6 +302,18 @@ func (c Context) Exception() Value {
 	return val
 }
 
+func (c Context) Object() Value {
+	val := Value{ctx: c.ref, ref: C.JS_NewObject(c.ref)}
+	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	return val
+}
+
+func (c Context) Array() Value {
+	val := Value{ctx: c.ref, ref: C.JS_NewArray(c.ref)}
+	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	return val
+}
+
 type Atom struct {
 	ctx *C.JSContext
 	ref C.JSAtom
@@ -394,6 +406,18 @@ func (v Value) GetByAtom(atom Atom) Value {
 	return val
 }
 
+func (v Value) SetByAtom(atom Atom, val Value) {
+	C.JS_SetProperty(v.ctx, v.ref, atom.ref, val.ref)
+}
+
+func (v Value) SetInt64(idx int64, val Value) {
+	C.JS_SetPropertyInt64(v.ctx, v.ref, C.int64_t(idx), val.ref)
+}
+
+func (v Value) SetUint32(idx uint32, val Value) {
+	C.JS_SetPropertyUint32(v.ctx, v.ref, C.uint32_t(idx), val.ref)
+}
+
 func (v Value) Set(name string, val Value) {
 	namePtr := C.CString(name)
 	defer C.free(unsafe.Pointer(namePtr))
@@ -433,6 +457,7 @@ func (v Value) IsUninitialized() bool { return C.JS_IsUninitialized(v.ref) == 1 
 func (v Value) IsString() bool        { return C.JS_IsString(v.ref) == 1 }
 func (v Value) IsSymbol() bool        { return C.JS_IsSymbol(v.ref) == 1 }
 func (v Value) IsObject() bool        { return C.JS_IsObject(v.ref) == 1 }
+func (v Value) IsArray() bool         { return C.JS_IsArray(v.ctx, v.ref) == 1 }
 
 func (v Value) IsError() bool       { return C.JS_IsError(v.ctx, v.ref) == 1 }
 func (v Value) IsFunction() bool    { return C.JS_IsFunction(v.ctx, v.ref) == 1 }

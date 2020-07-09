@@ -2,9 +2,40 @@ package quickjs
 
 import (
 	"errors"
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
+
+func TestObject(t *testing.T) {
+	ctx := NewRuntime().NewContext()
+
+	test := ctx.Object()
+	test.Set("A", ctx.String("String A"))
+	test.Set("B", ctx.String("String B"))
+	test.Set("C", ctx.String("String C"))
+	ctx.Globals().Set("test", test)
+
+	result, err := ctx.Eval(`Object.keys(test).map(key => test[key]).join(" ")`)
+	require.NoError(t, err)
+
+	require.EqualValues(t, "String A String B String C", result.String())
+}
+
+func TestArray(t *testing.T) {
+	ctx := NewRuntime().NewContext()
+
+	test := ctx.Array()
+	for i := int64(0); i < 3; i++ {
+		test.SetInt64(i, ctx.String(fmt.Sprintf("test %d", i)))
+	}
+	ctx.Globals().Set("test", test)
+
+	result, err := ctx.Eval(`test.map(v => v.toUpperCase())`)
+	require.NoError(t, err)
+
+	require.EqualValues(t, `TEST 0,TEST 1,TEST 2`, result.String())
+}
 
 func TestFunctionThrowError(t *testing.T) {
 	expected := errors.New("expected error")
