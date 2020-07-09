@@ -195,7 +195,7 @@ func (c Context) Atom(v string) Atom {
 	return atom
 }
 
-func (c Context) Eval(code string) (Value, error) { return c.EvalFile(code, "") }
+func (c Context) Eval(code string) (Value, error) { return c.EvalFile(code, "code") }
 
 func (c Context) EvalFile(code, filename string) (Value, error) {
 	codePtr := C.CString(code)
