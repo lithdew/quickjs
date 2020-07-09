@@ -246,6 +246,39 @@ func (c Context) ThrowTypeError(format string, args ...interface{}) Value {
 	return val
 }
 
+func (c Context) ThrowReferenceError(format string, args ...interface{}) Value {
+	cause := fmt.Sprintf(format, args...)
+
+	causePtr := C.CString(cause)
+	defer C.free(unsafe.Pointer(causePtr))
+
+	val := Value{ctx: c.ref, ref: C.ThrowReferenceError(c.ref, causePtr)}
+	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	return val
+}
+
+func (c Context) ThrowRangeError(format string, args ...interface{}) Value {
+	cause := fmt.Sprintf(format, args...)
+
+	causePtr := C.CString(cause)
+	defer C.free(unsafe.Pointer(causePtr))
+
+	val := Value{ctx: c.ref, ref: C.ThrowRangeError(c.ref, causePtr)}
+	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	return val
+}
+
+func (c Context) ThrowInternalError(format string, args ...interface{}) Value {
+	cause := fmt.Sprintf(format, args...)
+
+	causePtr := C.CString(cause)
+	defer C.free(unsafe.Pointer(causePtr))
+
+	val := Value{ctx: c.ref, ref: C.ThrowInternalError(c.ref, causePtr)}
+	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	return val
+}
+
 func (c Context) Exception() Value {
 	val := Value{ctx: c.ref, ref: C.JS_GetException(c.ref)}
 	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
