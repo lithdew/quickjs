@@ -33,11 +33,21 @@ func (r Runtime) RunGC() { C.JS_RunGC(r.ref) }
 func (r Runtime) Free() { C.JS_FreeRuntime(r.ref) }
 
 func (r Runtime) NewContext() Context {
-	ctx := Context{ref: C.JS_NewContext(r.ref)}
-	C.JS_AddIntrinsicBigFloat(ctx.ref)
-	C.JS_AddIntrinsicBigDecimal(ctx.ref)
-	C.JS_AddIntrinsicOperators(ctx.ref)
-	C.JS_EnableBignumExt(ctx.ref, C.int(1))
+	ref := C.JS_NewContext(r.ref)
+
+	C.JS_AddIntrinsicBigFloat(ref)
+	C.JS_AddIntrinsicBigDecimal(ref)
+	C.JS_AddIntrinsicOperators(ref)
+	C.JS_EnableBignumExt(ref, C.int(1))
+
+	ctx := Context{
+		ref: ref,
+		globals: Value{
+			ctx: ref,
+			ref: C.JS_GetGlobalObject(ref),
+		},
+	}
+
 	return ctx
 }
 
@@ -111,10 +121,15 @@ func proxy(ctx *C.JSContext, thisVal C.JSValueConst, argc C.int, argv *C.JSValue
 }
 
 type Context struct {
-	ref *C.JSContext
+	ref     *C.JSContext
+	globals Value
 }
 
-func (c Context) Free() { C.JS_FreeContext(c.ref) }
+func (c Context) Free() {
+	defer C.JS_FreeContext(c.ref)
+
+	c.globals.Free()
+}
 
 func (c Context) Function(fp Function) Value {
 	val := Value{ctx: c.ref, ref: C.JS_NewObjectClass(c.ref, C.int(funcPtrClassID))}
@@ -206,9 +221,7 @@ func (c Context) EvalFile(code, filename string) (Value, error) {
 	return val, nil
 }
 
-func (c Context) Globals() Value {
-	return Value{ctx: c.ref, ref: C.JS_GetGlobalObject(c.ref)}
-}
+func (c Context) Globals() Value { return c.globals }
 
 func (c Context) Throw(v Value) Value {
 	return Value{ctx: c.ref, ref: C.JS_Throw(c.ref, v.ref)}
