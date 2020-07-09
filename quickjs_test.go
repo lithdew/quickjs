@@ -27,8 +27,12 @@ func TestArray(t *testing.T) {
 
 	test := ctx.Array()
 	for i := int64(0); i < 3; i++ {
-		test.SetInt64(i, ctx.String(fmt.Sprintf("test %d", i)))
+		test.SetByInt64(i, ctx.String(fmt.Sprintf("test %d", i)))
 	}
+	for i := int64(0); i < test.Len(); i++ {
+		require.EqualValues(t, fmt.Sprintf("test %d", i), test.GetByUint32(uint32(i)).String())
+	}
+
 	ctx.Globals().Set("test", test)
 
 	result, err := ctx.Eval(`test.map(v => v.toUpperCase())`)

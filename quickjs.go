@@ -406,17 +406,25 @@ func (v Value) GetByAtom(atom Atom) Value {
 	return val
 }
 
+func (v Value) GetByUint32(idx uint32) Value {
+	val := Value{ctx: v.ctx, ref: C.JS_GetPropertyUint32(v.ctx, v.ref, C.uint32_t(idx))}
+	runtime.SetFinalizer(&val, func(val *Value) { C.JS_FreeValue(val.ctx, val.ref) })
+	return val
+}
+
 func (v Value) SetByAtom(atom Atom, val Value) {
 	C.JS_SetProperty(v.ctx, v.ref, atom.ref, val.ref)
 }
 
-func (v Value) SetInt64(idx int64, val Value) {
+func (v Value) SetByInt64(idx int64, val Value) {
 	C.JS_SetPropertyInt64(v.ctx, v.ref, C.int64_t(idx), val.ref)
 }
 
-func (v Value) SetUint32(idx uint32, val Value) {
+func (v Value) SetByUint32(idx uint32, val Value) {
 	C.JS_SetPropertyUint32(v.ctx, v.ref, C.uint32_t(idx), val.ref)
 }
+
+func (v Value) Len() int64 { return v.Get("length").Int64() }
 
 func (v Value) Set(name string, val Value) {
 	namePtr := C.CString(name)
