@@ -53,7 +53,7 @@ func (r Runtime) ExecutePendingJob() (Context, error) {
 		if err == 0 {
 			return ctx, io.EOF
 		}
-		return ctx, ctx.Exception().Error()
+		return ctx, ctx.Exception()
 	}
 
 	return ctx, nil
@@ -229,7 +229,7 @@ func (ctx *Context) Eval(code string) (Value, error) { return ctx.EvalFile(code,
 func (ctx *Context) EvalFile(code, filename string) (Value, error) {
 	val := ctx.evalFile(code, filename)
 	if val.IsException() {
-		return val, ctx.Exception().Error()
+		return val, ctx.Exception()
 	}
 	return val, nil
 }
@@ -285,8 +285,10 @@ func (ctx *Context) ThrowInternalError(format string, args ...interface{}) Value
 	return Value{ctx: ctx, ref: C.ThrowInternalError(ctx.ref, causePtr)}
 }
 
-func (ctx *Context) Exception() Value {
-	return Value{ctx: ctx, ref: C.JS_GetException(ctx.ref)}
+func (ctx *Context) Exception() error {
+	val := Value{ctx: ctx, ref: C.JS_GetException(ctx.ref)}
+	defer val.Free()
+	return val.Error()
 }
 
 func (ctx *Context) Object() Value {
@@ -425,7 +427,10 @@ func (v Value) Error() error {
 		return nil
 	}
 	cause := v.String()
+
 	stack := v.Get("stack")
+	defer stack.Free()
+
 	if stack.IsUndefined() {
 		return &Error{Cause: cause}
 	}
