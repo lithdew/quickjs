@@ -111,7 +111,7 @@ type Context struct {
 	proxy   *Value
 }
 
-func (c Context) Free() {
+func (c *Context) Free() {
 	defer C.JS_FreeContext(c.ref)
 
 	if c.proxy != nil {
