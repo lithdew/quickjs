@@ -210,9 +210,7 @@ func (ctx *Context) Atom(v string) Atom {
 	return Atom{ctx: ctx, ref: C.JS_NewAtom(ctx.ref, ptr)}
 }
 
-func (ctx *Context) eval(code string) Value {
-	return ctx.evalFile(code, "code")
-}
+func (ctx *Context) eval(code string) Value { return ctx.evalFile(code, "code") }
 
 func (ctx *Context) evalFile(code, filename string) Value {
 	codePtr := C.CString(code)
@@ -457,6 +455,13 @@ func (v Value) IsError() bool       { return C.JS_IsError(v.ctx.ref, v.ref) == 1
 func (v Value) IsFunction() bool    { return C.JS_IsFunction(v.ctx.ref, v.ref) == 1 }
 func (v Value) IsConstructor() bool { return C.JS_IsConstructor(v.ctx.ref, v.ref) == 1 }
 
+type PropertyEnum struct {
+	IsEnumerable bool
+	Atom         Atom
+}
+
+func (p PropertyEnum) String() string { return p.Atom.String() }
+
 func (v Value) PropertyNames() ([]PropertyEnum, error) {
 	var (
 		ptr  *C.JSPropertyEnum
@@ -482,10 +487,3 @@ func (v Value) PropertyNames() ([]PropertyEnum, error) {
 
 	return names, nil
 }
-
-type PropertyEnum struct {
-	IsEnumerable bool
-	Atom         Atom
-}
-
-func (p PropertyEnum) String() string { return p.Atom.String() }
