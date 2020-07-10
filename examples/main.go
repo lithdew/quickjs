@@ -9,6 +9,11 @@ import (
 
 func check(err error) {
 	if err != nil {
+		var evalErr *quickjs.Error
+		if errors.As(err, &evalErr) {
+		    fmt.Println(evalErr.Cause)
+		    fmt.Prnitln(evalErr.Stack)
+		}
 		panic(err)
 	}
 }
