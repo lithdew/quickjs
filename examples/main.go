@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/lithdew/quickjs"
@@ -11,8 +12,8 @@ func check(err error) {
 	if err != nil {
 		var evalErr *quickjs.Error
 		if errors.As(err, &evalErr) {
-		    fmt.Println(evalErr.Cause)
-		    fmt.Prnitln(evalErr.Stack)
+			fmt.Println(evalErr.Cause)
+			fmt.Println(evalErr.Stack)
 		}
 		panic(err)
 	}

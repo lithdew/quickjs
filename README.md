@@ -24,6 +24,7 @@ The full example code below may be found by clicking [here](examples/main.go). F
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/lithdew/quickjs"
@@ -35,7 +36,7 @@ func check(err error) {
 		var evalErr *quickjs.Error
 		if errors.As(err, &evalErr) {
 		    fmt.Println(evalErr.Cause)
-		    fmt.Prnitln(evalErr.Stack)
+		    fmt.Println(evalErr.Stack)
 		}
 		panic(err)
 	}
@@ -44,7 +45,7 @@ func check(err error) {
 func main() {
 	runtime := quickjs.NewRuntime()
 	defer runtime.Free()
-	
+
 	context := runtime.NewContext()
 	defer context.Free()
 
