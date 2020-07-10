@@ -35,8 +35,8 @@ func check(err error) {
 	if err != nil {
 		var evalErr *quickjs.Error
 		if errors.As(err, &evalErr) {
-		    fmt.Println(evalErr.Cause)
-		    fmt.Println(evalErr.Stack)
+			fmt.Println(evalErr.Cause)
+			fmt.Println(evalErr.Stack)
 		}
 		panic(err)
 	}
@@ -55,6 +55,7 @@ func main() {
 
 	result, err := context.Eval("`Hello world! 2 ** 8 = ${2 ** 8}.`")
 	check(err)
+	defer result.Free()
 
 	fmt.Println(result.String())
 	fmt.Println()
@@ -63,6 +64,7 @@ func main() {
 
 	result, err = context.Eval(`1 + 2 * 100 - 3 + Math.sin(10)`)
 	check(err)
+	defer result.Free()
 
 	fmt.Println(result.Int64())
 	fmt.Println()
@@ -71,6 +73,7 @@ func main() {
 
 	result, err = context.Eval(`128n ** 16n`)
 	check(err)
+	defer result.Free()
 
 	fmt.Println(result.BigInt())
 	fmt.Println()
@@ -79,6 +82,7 @@ func main() {
 
 	result, err = context.Eval(`128l ** 12l`)
 	check(err)
+	defer result.Free()
 
 	fmt.Println(result.BigFloat())
 	fmt.Println()
@@ -87,21 +91,25 @@ func main() {
 
 	result, err = context.Eval(`false && true`)
 	check(err)
+	defer result.Free()
 
 	fmt.Println(result.Bool())
 	fmt.Println()
 
 	// Test setting and calling functions.
 
-	globals.Set("A", context.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
+	A := func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
 		fmt.Println("A got called!")
 		return ctx.Null()
-	}))
+	}
 
-	globals.Set("B", context.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
+	B := func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
 		fmt.Println("B got called!")
 		return ctx.Null()
-	}))
+	}
+
+	globals.Set("A", context.Function(A))
+	globals.Set("B", context.Function(B))
 
 	_, err = context.Eval(`for (let i = 0; i < 10; i++) { if (i % 2 === 0) A(); else B(); }`)
 	check(err)
@@ -119,6 +127,8 @@ func main() {
 	fmt.Println("Globals:")
 	for _, name := range names {
 		val := globals.GetByAtom(name.Atom)
+		defer val.Free()
+
 		fmt.Printf("'%s': %s\n", name, val)
 	}
 	fmt.Println()
@@ -132,6 +142,7 @@ func main() {
 
 	result, err = context.Eval(strings.Join(flag.Args(), " "))
 	check(err)
+	defer result.Free()
 
 	if result.IsObject() {
 		names, err := result.PropertyNames()
@@ -140,6 +151,8 @@ func main() {
 		fmt.Println("Object:")
 		for _, name := range names {
 			val := result.GetByAtom(name.Atom)
+			defer val.Free()
+
 			fmt.Printf("'%s': %s\n", name, val)
 		}
 	} else {
@@ -172,12 +185,181 @@ A got called!
 B got called!
 
 Globals:
-'A': function () {
+'Object': function Object() {
     [native code]
 }
-'B': function () {
+'Function': function Function() {
     [native code]
 }
+'Error': function Error() {
+    [native code]
+}
+'EvalError': function EvalError() {
+    [native code]
+}
+'RangeError': function RangeError() {
+    [native code]
+}
+'ReferenceError': function ReferenceError() {
+    [native code]
+}
+'SyntaxError': function SyntaxError() {
+    [native code]
+}
+'TypeError': function TypeError() {
+    [native code]
+}
+'URIError': function URIError() {
+    [native code]
+}
+'InternalError': function InternalError() {
+    [native code]
+}
+'AggregateError': function AggregateError() {
+    [native code]
+}
+'Array': function Array() {
+    [native code]
+}
+'parseInt': function parseInt() {
+    [native code]
+}
+'parseFloat': function parseFloat() {
+    [native code]
+}
+'isNaN': function isNaN() {
+    [native code]
+}
+'isFinite': function isFinite() {
+    [native code]
+}
+'decodeURI': function decodeURI() {
+    [native code]
+}
+'decodeURIComponent': function decodeURIComponent() {
+    [native code]
+}
+'encodeURI': function encodeURI() {
+    [native code]
+}
+'encodeURIComponent': function encodeURIComponent() {
+    [native code]
+}
+'escape': function escape() {
+    [native code]
+}
+'unescape': function unescape() {
+    [native code]
+}
+'Infinity': Infinity
+'NaN': NaN
+'undefined': undefined
+'__date_clock': function __date_clock() {
+    [native code]
+}
+'Number': function Number() {
+    [native code]
+}
+'Boolean': function Boolean() {
+    [native code]
+}
+'String': function String() {
+    [native code]
+}
+'Math': [object Math]
+'Reflect': [object Object]
+'Symbol': function Symbol() {
+    [native code]
+}
+'eval': function eval() {
+    [native code]
+}
+'globalThis': [object Object]
+'Date': function Date() {
+    [native code]
+}
+'RegExp': function RegExp() {
+    [native code]
+}
+'JSON': [object JSON]
+'Proxy': function Proxy() {
+    [native code]
+}
+'Map': function Map() {
+    [native code]
+}
+'Set': function Set() {
+    [native code]
+}
+'WeakMap': function WeakMap() {
+    [native code]
+}
+'WeakSet': function WeakSet() {
+    [native code]
+}
+'ArrayBuffer': function ArrayBuffer() {
+    [native code]
+}
+'SharedArrayBuffer': function SharedArrayBuffer() {
+    [native code]
+}
+'Uint8ClampedArray': function Uint8ClampedArray() {
+    [native code]
+}
+'Int8Array': function Int8Array() {
+    [native code]
+}
+'Uint8Array': function Uint8Array() {
+    [native code]
+}
+'Int16Array': function Int16Array() {
+    [native code]
+}
+'Uint16Array': function Uint16Array() {
+    [native code]
+}
+'Int32Array': function Int32Array() {
+    [native code]
+}
+'Uint32Array': function Uint32Array() {
+    [native code]
+}
+'BigInt64Array': function BigInt64Array() {
+    [native code]
+}
+'BigUint64Array': function BigUint64Array() {
+    [native code]
+}
+'Float32Array': function Float32Array() {
+    [native code]
+}
+'Float64Array': function Float64Array() {
+    [native code]
+}
+'DataView': function DataView() {
+    [native code]
+}
+'Atomics': [object Atomics]
+'Promise': function Promise() {
+    [native code]
+}
+'BigInt': function BigInt() {
+    [native code]
+}
+'BigFloat': function BigFloat() {
+    [native code]
+}
+'BigFloatEnv': function BigFloatEnv() {
+    [native code]
+}
+'BigDecimal': function BigDecimal() {
+    [native code]
+}
+'Operators': function Operators() {
+    [native code]
+}
+'A': function() { return proxy.call(this, id, ...arguments); }
+'B': function() { return proxy.call(this, id, ...arguments); }
 'HELLO': world
 'TEST': false
 

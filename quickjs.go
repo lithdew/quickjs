@@ -120,14 +120,14 @@ type Context struct {
 }
 
 func (ctx *Context) Free() {
-	defer C.JS_FreeContext(ctx.ref)
-
 	if ctx.proxy != nil {
 		ctx.proxy.Free()
 	}
 	if ctx.globals != nil {
 		ctx.globals.Free()
 	}
+
+	C.JS_FreeContext(ctx.ref)
 }
 
 func (ctx *Context) Function(fn Function) Value {
@@ -304,6 +304,8 @@ type Atom struct {
 	ref C.JSAtom
 }
 
+func (a Atom) Free() { C.JS_FreeAtom(a.ctx.ref, a.ref) }
+
 func (a Atom) String() string {
 	ptr := C.JS_AtomToCString(a.ctx.ref, a.ref)
 	defer C.JS_FreeCString(a.ctx.ref, ptr)
@@ -461,10 +463,11 @@ func (v Value) PropertyNames() ([]PropertyEnum, error) {
 		size C.uint32_t
 	)
 
-	result := int(C.JS_GetOwnPropertyNames(v.ctx.ref, &ptr, &size, v.ref, C.int(1<<0|1<<1|1<<2|1<<4|1<<5)))
+	result := int(C.JS_GetOwnPropertyNames(v.ctx.ref, &ptr, &size, v.ref, C.int(1<<0|1<<1|1<<2)))
 	if result < 0 {
 		return nil, errors.New("value does not contain properties")
 	}
+	defer C.js_free(v.ctx.ref, unsafe.Pointer(ptr))
 
 	entries := (*[1 << 30]C.JSPropertyEnum)(unsafe.Pointer(ptr))
 
@@ -472,7 +475,9 @@ func (v Value) PropertyNames() ([]PropertyEnum, error) {
 
 	for i := 0; i < len(names); i++ {
 		names[i].IsEnumerable = entries[i].is_enumerable == 1
+
 		names[i].Atom = Atom{ctx: v.ctx, ref: entries[i].atom}
+		names[i].Atom.Free()
 	}
 
 	return names, nil
