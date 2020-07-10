@@ -41,27 +41,46 @@ func TestArray(t *testing.T) {
 	require.EqualValues(t, `TEST 0,TEST 1,TEST 2`, result.String())
 }
 
+func TestBadSyntax(t *testing.T) {
+	runtime := NewRuntime()
+	defer runtime.Free()
+
+	context := runtime.NewContext()
+	defer context.Free()
+
+	_, err := context.Eval(`"bad syntax'`)
+	require.Error(t, err)
+}
+
 func TestFunctionThrowError(t *testing.T) {
 	expected := errors.New("expected error")
 
-	ctx := NewRuntime().NewContext()
-	ctx.Globals().SetFunction("A", func(ctx *Context, this Value, args []Value) Value {
+	runtime := NewRuntime()
+	defer runtime.Free()
+
+	context := runtime.NewContext()
+	defer context.Free()
+
+	context.Globals().SetFunction("A", func(ctx *Context, this Value, args []Value) Value {
 		return ctx.ThrowError(expected)
 	})
 
-	_, actual := ctx.Eval("A()")
+	_, actual := context.Eval("A()")
 	require.Error(t, actual)
 	require.EqualValues(t, "Error: "+expected.Error(), actual.Error())
 }
 
 func TestFunction(t *testing.T) {
-	rt := NewRuntime()
-	ctx := rt.NewContext()
+	runtime := NewRuntime()
+	defer runtime.Free()
+
+	context := runtime.NewContext()
+	defer context.Free()
 
 	A := make(chan struct{})
 	B := make(chan struct{})
 
-	ctx.Globals().Set("A", ctx.Function(func(ctx *Context, this Value, args []Value) Value {
+	context.Globals().SetFunction("A", func(ctx *Context, this Value, args []Value) Value {
 		require.Len(t, args, 4)
 		require.True(t, args[0].IsString() && args[0].String() == "hello world!")
 		require.True(t, args[1].IsNumber() && args[1].Int32() == 1)
@@ -71,22 +90,22 @@ func TestFunction(t *testing.T) {
 		close(A)
 
 		return ctx.String("A says hello")
-	}))
+	})
 
-	ctx.Globals().Set("B", ctx.Function(func(ctx *Context, this Value, args []Value) Value {
+	context.Globals().SetFunction("B", func(ctx *Context, this Value, args []Value) Value {
 		require.Len(t, args, 0)
 
 		close(B)
 
 		return ctx.Float64(256)
-	}))
+	})
 
-	result, err := ctx.Eval(`A("hello world!", 1, 2 ** 3, null)`)
+	result, err := context.Eval(`A("hello world!", 1, 2 ** 3, null)`)
 	require.NoError(t, err)
 	require.True(t, result.IsString() && result.String() == "A says hello")
 	<-A
 
-	result, err = ctx.Eval(`B()`)
+	result, err = context.Eval(`B()`)
 	require.NoError(t, err)
 	require.True(t, result.IsNumber() && result.Uint32() == 256)
 	<-B

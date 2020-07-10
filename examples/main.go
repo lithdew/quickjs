@@ -14,14 +14,17 @@ func check(err error) {
 }
 
 func main() {
-	rt := quickjs.NewRuntime()
-	ctx := rt.NewContext()
+	runtime := quickjs.NewRuntime()
+	defer runtime.Free()
 
-	globals := ctx.Globals()
+	context := runtime.NewContext()
+	defer context.Free()
+
+	globals := context.Globals()
 
 	// Test evaluating template strings.
 
-	result, err := ctx.Eval("`Hello world! 2 ** 8 = ${2 ** 8}.`")
+	result, err := context.Eval("`Hello world! 2 ** 8 = ${2 ** 8}.`")
 	check(err)
 
 	fmt.Println(result.String())
@@ -29,7 +32,7 @@ func main() {
 
 	// Test evaluating numeric expressions.
 
-	result, err = ctx.Eval(`1 + 2 * 100 - 3 + Math.sin(10)`)
+	result, err = context.Eval(`1 + 2 * 100 - 3 + Math.sin(10)`)
 	check(err)
 
 	fmt.Println(result.Int64())
@@ -37,7 +40,7 @@ func main() {
 
 	// Test evaluating big integer expressions.
 
-	result, err = ctx.Eval(`128n ** 16n`)
+	result, err = context.Eval(`128n ** 16n`)
 	check(err)
 
 	fmt.Println(result.BigInt())
@@ -45,7 +48,7 @@ func main() {
 
 	// Test evaluating big decimal expressions.
 
-	result, err = ctx.Eval(`128l ** 12l`)
+	result, err = context.Eval(`128l ** 12l`)
 	check(err)
 
 	fmt.Println(result.BigFloat())
@@ -53,7 +56,7 @@ func main() {
 
 	// Test evaluating boolean expressions.
 
-	result, err = ctx.Eval(`false && true`)
+	result, err = context.Eval(`false && true`)
 	check(err)
 
 	fmt.Println(result.Bool())
@@ -61,24 +64,24 @@ func main() {
 
 	// Test setting and calling functions.
 
-	globals.Set("A", ctx.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
+	globals.Set("A", context.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
 		fmt.Println("A got called!")
 		return ctx.Null()
 	}))
 
-	globals.Set("B", ctx.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
+	globals.Set("B", context.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
 		fmt.Println("B got called!")
 		return ctx.Null()
 	}))
 
-	_, err = ctx.Eval(`for (let i = 0; i < 10; i++) { if (i % 2 === 0) A(); else B(); }`)
+	_, err = context.Eval(`for (let i = 0; i < 10; i++) { if (i % 2 === 0) A(); else B(); }`)
 	check(err)
 
 	fmt.Println()
 
 	// Test setting global variables.
 
-	_, err = ctx.Eval(`HELLO = "world"; TEST = false;`)
+	_, err = context.Eval(`HELLO = "world"; TEST = false;`)
 	check(err)
 
 	names, err := globals.PropertyNames()
@@ -98,7 +101,7 @@ func main() {
 		return
 	}
 
-	result, err = ctx.Eval(strings.Join(flag.Args(), " "))
+	result, err = context.Eval(strings.Join(flag.Args(), " "))
 	check(err)
 
 	if result.IsObject() {
