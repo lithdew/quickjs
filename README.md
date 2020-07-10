@@ -16,6 +16,12 @@ These bindings have been tested to cross-compile and run successfully on Linux, 
 $ go get github.com/lithdew/quickjs
 ```
 
+## Guidelines
+
+1. Free `quickjs.Runtime` and `quickjs.Context` once you are done using them.
+2. Free `quickjs.Value`'s returned by `Eval()` and `EvalFile()`. All other values do not need to be freed, as they get garbage-collected.
+3. You may access the stacktrace of an error returned by `Eval()` or `EvalFile()` by casting it to a `*quickjs.Error`.
+
 ## Example
 
 The full example code below may be found by clicking [here](examples/main.go). Find more API examples [here](quickjs_test.go).
