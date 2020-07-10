@@ -4,39 +4,51 @@ import (
 	"errors"
 	"fmt"
 	"github.com/stretchr/testify/require"
+	stdruntime "runtime"
+	"sync"
 	"testing"
 )
 
 func TestObject(t *testing.T) {
-	ctx := NewRuntime().NewContext()
+	runtime := NewRuntime()
+	defer runtime.Free()
 
-	test := ctx.Object()
-	test.Set("A", ctx.String("String A"))
-	test.Set("B", ctx.String("String B"))
-	test.Set("C", ctx.String("String C"))
-	ctx.Globals().Set("test", test)
+	context := runtime.NewContext()
+	defer context.Free()
 
-	result, err := ctx.Eval(`Object.keys(test).map(key => test[key]).join(" ")`)
+	test := context.Object()
+	test.Set("A", context.String("String A"))
+	test.Set("B", context.String("String B"))
+	test.Set("C", context.String("String C"))
+	context.Globals().Set("test", test)
+
+	result, err := context.Eval(`Object.keys(test).map(key => test[key]).join(" ")`)
 	require.NoError(t, err)
+	defer result.Free()
 
 	require.EqualValues(t, "String A String B String C", result.String())
 }
 
 func TestArray(t *testing.T) {
-	ctx := NewRuntime().NewContext()
+	runtime := NewRuntime()
+	defer runtime.Free()
 
-	test := ctx.Array()
+	context := runtime.NewContext()
+	defer context.Free()
+
+	test := context.Array()
 	for i := int64(0); i < 3; i++ {
-		test.SetByInt64(i, ctx.String(fmt.Sprintf("test %d", i)))
+		test.SetByInt64(i, context.String(fmt.Sprintf("test %d", i)))
 	}
 	for i := int64(0); i < test.Len(); i++ {
 		require.EqualValues(t, fmt.Sprintf("test %d", i), test.GetByUint32(uint32(i)).String())
 	}
 
-	ctx.Globals().Set("test", test)
+	context.Globals().Set("test", test)
 
-	result, err := ctx.Eval(`test.map(v => v.toUpperCase())`)
+	result, err := context.Eval(`test.map(v => v.toUpperCase())`)
 	require.NoError(t, err)
+	defer result.Free()
 
 	require.EqualValues(t, `TEST 0,TEST 1,TEST 2`, result.String())
 }
@@ -102,11 +114,60 @@ func TestFunction(t *testing.T) {
 
 	result, err := context.Eval(`A("hello world!", 1, 2 ** 3, null)`)
 	require.NoError(t, err)
+	defer result.Free()
+
 	require.True(t, result.IsString() && result.String() == "A says hello")
 	<-A
 
 	result, err = context.Eval(`B()`)
 	require.NoError(t, err)
+	defer result.Free()
+
 	require.True(t, result.IsNumber() && result.Uint32() == 256)
 	<-B
+}
+
+func TestConcurrency(t *testing.T) {
+	n := 32
+	m := 10000
+
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	req := make(chan struct{}, n)
+	res := make(chan int64, m)
+
+	for i := 0; i < n; i++ {
+		go func() {
+			stdruntime.LockOSThread()
+
+			defer wg.Done()
+
+			runtime := NewRuntime()
+			defer runtime.Free()
+
+			context := runtime.NewContext()
+			defer context.Free()
+
+			for range req {
+				result, err := context.Eval(`new Date().getTime()`)
+				require.NoError(t, err)
+
+				res <- result.Int64()
+
+				result.Free()
+			}
+		}()
+	}
+
+	for i := 0; i < m; i++ {
+		req <- struct{}{}
+	}
+	close(req)
+
+	wg.Wait()
+
+	for i := 0; i < m; i++ {
+		<-res
+	}
 }
