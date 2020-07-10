@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -32,7 +33,7 @@ func (r Runtime) RunGC() { C.JS_RunGC(r.ref) }
 
 func (r Runtime) Free() { C.JS_FreeRuntime(r.ref) }
 
-func (r Runtime) NewContext() Context {
+func (r Runtime) NewContext() *Context {
 	ref := C.JS_NewContext(r.ref)
 
 	C.JS_AddIntrinsicBigFloat(ref)
@@ -40,15 +41,7 @@ func (r Runtime) NewContext() Context {
 	C.JS_AddIntrinsicOperators(ref)
 	C.JS_EnableBignumExt(ref, C.int(1))
 
-	ctx := Context{
-		ref: ref,
-		globals: Value{
-			ctx: ref,
-			ref: C.JS_GetGlobalObject(ref),
-		},
-	}
-
-	return ctx
+	return &Context{ref: ref}
 }
 
 func (r Runtime) ExecutePendingJob() (Context, error) {
@@ -67,48 +60,38 @@ func (r Runtime) ExecutePendingJob() (Context, error) {
 
 type Function func(ctx Context, this Value, args []Value) Value
 
+var funcPtrLen int64
 var funcPtrLock sync.Mutex
-var funcPtrStore = make(map[unsafe.Pointer]Function)
+var funcPtrStore = make(map[int64]Function)
 var funcPtrClassID C.JSClassID
 
 func init() { C.JS_NewClassID(&funcPtrClassID) }
 
-func storeFuncPtr(v Function) unsafe.Pointer {
+func storeFuncPtr(v Function) int64 {
 	if v == nil {
-		return nil
+		return -1
 	}
-	var ptr unsafe.Pointer = C.malloc(C.size_t(1))
-	if ptr == nil {
-		panic("failed to malloc pointer for function")
-	}
+	id := atomic.AddInt64(&funcPtrLen, 1) - 1
 	funcPtrLock.Lock()
 	defer funcPtrLock.Unlock()
-	funcPtrStore[ptr] = v
-	return ptr
+	funcPtrStore[id] = v
+	return id
 }
 
-func restoreFuncPtr(ptr unsafe.Pointer) Function {
-	if ptr == nil {
-		return nil
-	}
+func restoreFuncPtr(ptr int64) Function {
 	funcPtrLock.Lock()
 	defer funcPtrLock.Unlock()
 	return funcPtrStore[ptr]
 }
 
-func freeFuncPtr(ptr unsafe.Pointer) {
-	if ptr == nil {
-		return
-	}
-	defer C.free(ptr)
-	funcPtrLock.Lock()
-	defer funcPtrLock.Unlock()
-	delete(funcPtrStore, ptr)
-}
+//func freeFuncPtr(ptr int64) {
+//	funcPtrLock.Lock()
+//	defer funcPtrLock.Unlock()
+//	delete(funcPtrStore, ptr)
+//}
 
 //export proxy
-func proxy(ctx *C.JSContext, thisVal C.JSValueConst, argc C.int, argv *C.JSValueConst, _ C.int, funcData *C.JSValue) C.JSValue {
-	fn := restoreFuncPtr(C.JS_GetOpaque(*funcData, funcPtrClassID))
+func proxy(ctx *C.JSContext, thisVal C.JSValueConst, argc C.int, argv *C.JSValueConst) C.JSValue {
 	refs := (*[1 << 30]C.JSValueConst)(unsafe.Pointer(argv))[:argc:argc]
 
 	args := make([]Value, len(refs))
@@ -117,34 +100,48 @@ func proxy(ctx *C.JSContext, thisVal C.JSValueConst, argc C.int, argv *C.JSValue
 		args[i].ref = refs[i]
 	}
 
-	return fn(Context{ref: ctx}, Value{ref: thisVal}, args).ref
+	fn := restoreFuncPtr(args[0].Int64())
+
+	return fn(Context{ref: ctx}, Value{ctx: ctx, ref: thisVal}, args[1:]).ref
 }
 
 type Context struct {
 	ref     *C.JSContext
-	globals Value
+	globals *Value
+	proxy   *Value
 }
 
 func (c Context) Free() {
 	defer C.JS_FreeContext(c.ref)
 
-	c.globals.Free()
+	if c.proxy != nil {
+		c.proxy.Free()
+	}
+	if c.globals != nil {
+		c.globals.Free()
+	}
 }
 
-func (c Context) Function(fp Function) Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewObjectClass(c.ref, C.int(funcPtrClassID))}
+func (c *Context) Function(fp Function) Value {
+	val := c.eval(`(proxy, id) => function() { return proxy.call(this, id, ...arguments); }`)
 	if val.IsException() {
 		return val
 	}
+	defer val.Free()
 
 	funcPtr := storeFuncPtr(fp)
-	C.JS_SetOpaque(val.ref, funcPtr)
+	funcPtrVal := c.Int64(funcPtr)
 
-	proxy := (*C.JSCFunctionData)(unsafe.Pointer(C.InvokeProxy))
-	length := C.int(0)
-	magic := C.int(0)
+	if c.proxy == nil {
+		c.proxy = &Value{
+			ctx: c.ref,
+			ref: C.JS_NewCFunction(c.ref, (*C.JSCFunction)(unsafe.Pointer(C.InvokeProxy)), nil, C.int(0)),
+		}
+	}
 
-	return Value{ctx: c.ref, ref: C.JS_NewCFunctionData(c.ref, proxy, length, magic, C.int(1), &val.ref)}
+	args := []C.JSValue{c.proxy.ref, funcPtrVal.ref}
+
+	return Value{ctx: c.ref, ref: C.JS_Call(c.ref, val.ref, c.Null().ref, C.int(len(args)), &args[0])}
 }
 
 func (c Context) Null() Value {
@@ -205,23 +202,39 @@ func (c Context) Atom(v string) Atom {
 	return Atom{ctx: c.ref, ref: C.JS_NewAtom(c.ref, ptr)}
 }
 
-func (c Context) Eval(code string) (Value, error) { return c.EvalFile(code, "code") }
+func (c Context) eval(code string) Value {
+	return c.evalFile(code, "code")
+}
 
-func (c Context) EvalFile(code, filename string) (Value, error) {
+func (c Context) evalFile(code, filename string) Value {
 	codePtr := C.CString(code)
 	defer C.free(unsafe.Pointer(codePtr))
 
 	filenamePtr := C.CString(filename)
 	defer C.free(unsafe.Pointer(filenamePtr))
 
-	val := Value{ctx: c.ref, ref: C.JS_Eval(c.ref, codePtr, C.size_t(len(code)), filenamePtr, C.int(0))}
+	return Value{ctx: c.ref, ref: C.JS_Eval(c.ref, codePtr, C.size_t(len(code)), filenamePtr, C.int(0))}
+}
+
+func (c Context) Eval(code string) (Value, error) { return c.EvalFile(code, "code") }
+
+func (c Context) EvalFile(code, filename string) (Value, error) {
+	val := c.evalFile(code, filename)
 	if val.IsException() {
 		return val, c.Exception().Error()
 	}
 	return val, nil
 }
 
-func (c Context) Globals() Value { return c.globals }
+func (c *Context) Globals() Value {
+	if c.globals == nil {
+		c.globals = &Value{
+			ctx: c.ref,
+			ref: C.JS_GetGlobalObject(c.ref),
+		}
+	}
+	return *c.globals
+}
 
 func (c Context) Throw(v Value) Value {
 	return Value{ctx: c.ref, ref: C.JS_Throw(c.ref, v.ref)}
@@ -298,7 +311,7 @@ type Value struct {
 
 func (v Value) Free() { C.JS_FreeValue(v.ctx, v.ref) }
 
-func (v Value) Context() Context { return Context{ref: v.ctx} }
+func (v Value) Context() *Context { return &Context{ref: v.ctx} }
 
 func (v Value) Bool() bool { return C.JS_ToBool(v.ctx, v.ref) == 1 }
 

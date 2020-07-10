@@ -1,7 +1,7 @@
 #include "stdlib.h"
 #include "quickjs.h"
 
-extern JSValue InvokeProxy(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic, JSValue *func_data);
+extern JSValue InvokeProxy(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv);
 
 static JSValue JS_NewNull() { return JS_NULL; }
 static JSValue JS_NewUndefined() { return JS_UNDEFINED; }
