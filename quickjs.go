@@ -13,6 +13,7 @@ import (
 /*
 #cgo CFLAGS: -D_GNU_SOURCE
 #cgo CFLAGS: -DCONFIG_BIGNUM
+#cgo CFLAGS: -fno-asynchronous-unwind-tables
 #cgo LDFLAGS: -lm -lpthread -static
 
 #include "bridge.h"
@@ -95,7 +96,11 @@ func restoreFuncPtr(ptr int64) funcEntry {
 //export proxy
 func proxy(ctx *C.JSContext, thisVal C.JSValueConst, argc C.int, argv *C.JSValueConst) C.JSValue {
 	refs := (*[1 << 30]C.JSValueConst)(unsafe.Pointer(argv))[:argc:argc]
-	entry := restoreFuncPtr(Value{ctx: &Context{ref: ctx}, ref: refs[0]}.Int64())
+
+	id := C.int64_t(0)
+	C.JS_ToInt64(ctx, &id, refs[0])
+
+	entry := restoreFuncPtr(int64(id))
 
 	args := make([]Value, len(refs)-1)
 	for i := 0; i < len(args); i++ {
