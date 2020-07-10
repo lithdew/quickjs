@@ -3,7 +3,3 @@
 
 # Require Unix line endings
 * text eol=lf
-
-*.go         text
-*.c          text
-*.h          text
