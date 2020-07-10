@@ -58,19 +58,21 @@ func (r Runtime) ExecutePendingJob() (Context, error) {
 	return ctx, nil
 }
 
-type Function func(ctx Context, this Value, args []Value) Value
+type Function func(ctx *Context, this Value, args []Value) Value
+
+type funcEntry struct {
+	ctx *Context
+	fn  Function
+}
 
 var funcPtrLen int64
 var funcPtrLock sync.Mutex
-var funcPtrStore = make(map[int64]Function)
+var funcPtrStore = make(map[int64]funcEntry)
 var funcPtrClassID C.JSClassID
 
 func init() { C.JS_NewClassID(&funcPtrClassID) }
 
-func storeFuncPtr(v Function) int64 {
-	if v == nil {
-		return -1
-	}
+func storeFuncPtr(v funcEntry) int64 {
 	id := atomic.AddInt64(&funcPtrLen, 1) - 1
 	funcPtrLock.Lock()
 	defer funcPtrLock.Unlock()
@@ -78,7 +80,7 @@ func storeFuncPtr(v Function) int64 {
 	return id
 }
 
-func restoreFuncPtr(ptr int64) Function {
+func restoreFuncPtr(ptr int64) funcEntry {
 	funcPtrLock.Lock()
 	defer funcPtrLock.Unlock()
 	return funcPtrStore[ptr]
@@ -93,16 +95,17 @@ func restoreFuncPtr(ptr int64) Function {
 //export proxy
 func proxy(ctx *C.JSContext, thisVal C.JSValueConst, argc C.int, argv *C.JSValueConst) C.JSValue {
 	refs := (*[1 << 30]C.JSValueConst)(unsafe.Pointer(argv))[:argc:argc]
+	entry := restoreFuncPtr(Value{ctx: &Context{ref: ctx}, ref: refs[0]}.Int64())
 
-	args := make([]Value, len(refs))
+	args := make([]Value, len(refs)-1)
 	for i := 0; i < len(args); i++ {
-		args[i].ctx = ctx
-		args[i].ref = refs[i]
+		args[i].ctx = entry.ctx
+		args[i].ref = refs[1+i]
 	}
 
-	fn := restoreFuncPtr(args[0].Int64())
+	result := entry.fn(entry.ctx, Value{ctx: entry.ctx, ref: thisVal}, args)
 
-	return fn(Context{ref: ctx}, Value{ctx: ctx, ref: thisVal}, args[1:]).ref
+	return result.ref
 }
 
 type Context struct {
@@ -111,237 +114,237 @@ type Context struct {
 	proxy   *Value
 }
 
-func (c *Context) Free() {
-	defer C.JS_FreeContext(c.ref)
+func (ctx *Context) Free() {
+	defer C.JS_FreeContext(ctx.ref)
 
-	if c.proxy != nil {
-		c.proxy.Free()
+	if ctx.proxy != nil {
+		ctx.proxy.Free()
 	}
-	if c.globals != nil {
-		c.globals.Free()
+	if ctx.globals != nil {
+		ctx.globals.Free()
 	}
 }
 
-func (c *Context) Function(fp Function) Value {
-	val := c.eval(`(proxy, id) => function() { return proxy.call(this, id, ...arguments); }`)
+func (ctx *Context) Function(fn Function) Value {
+	val := ctx.eval(`(proxy, id) => function() { return proxy.call(this, id, ...arguments); }`)
 	if val.IsException() {
 		return val
 	}
 	defer val.Free()
 
-	funcPtr := storeFuncPtr(fp)
-	funcPtrVal := c.Int64(funcPtr)
+	funcPtr := storeFuncPtr(funcEntry{ctx: ctx, fn: fn})
+	funcPtrVal := ctx.Int64(funcPtr)
 
-	if c.proxy == nil {
-		c.proxy = &Value{
-			ctx: c.ref,
-			ref: C.JS_NewCFunction(c.ref, (*C.JSCFunction)(unsafe.Pointer(C.InvokeProxy)), nil, C.int(0)),
+	if ctx.proxy == nil {
+		ctx.proxy = &Value{
+			ctx: ctx,
+			ref: C.JS_NewCFunction(ctx.ref, (*C.JSCFunction)(unsafe.Pointer(C.InvokeProxy)), nil, C.int(0)),
 		}
 	}
 
-	args := []C.JSValue{c.proxy.ref, funcPtrVal.ref}
+	args := []C.JSValue{ctx.proxy.ref, funcPtrVal.ref}
 
-	return Value{ctx: c.ref, ref: C.JS_Call(c.ref, val.ref, c.Null().ref, C.int(len(args)), &args[0])}
+	return Value{ctx: ctx, ref: C.JS_Call(ctx.ref, val.ref, ctx.Null().ref, C.int(len(args)), &args[0])}
 }
 
-func (c Context) Null() Value {
-	return Value{ctx: c.ref, ref: C.JS_NewNull()}
+func (ctx *Context) Null() Value {
+	return Value{ctx: ctx, ref: C.JS_NewNull()}
 }
 
-func (c Context) Undefined() Value {
-	return Value{ctx: c.ref, ref: C.JS_NewUndefined()}
+func (ctx *Context) Undefined() Value {
+	return Value{ctx: ctx, ref: C.JS_NewUndefined()}
 }
 
-func (c Context) Uninitialized() Value {
-	return Value{ctx: c.ref, ref: C.JS_NewUninitialized()}
+func (ctx *Context) Uninitialized() Value {
+	return Value{ctx: ctx, ref: C.JS_NewUninitialized()}
 }
 
-func (c Context) Error(err error) Value {
-	val := Value{ctx: c.ref, ref: C.JS_NewError(c.ref)}
-	val.Set("message", c.String(err.Error()))
+func (ctx *Context) Error(err error) Value {
+	val := Value{ctx: ctx, ref: C.JS_NewError(ctx.ref)}
+	val.Set("message", ctx.String(err.Error()))
 	return val
 }
 
-func (c Context) Bool(b bool) Value {
+func (ctx *Context) Bool(b bool) Value {
 	bv := 0
 	if b {
 		bv = 1
 	}
-	return Value{ctx: c.ref, ref: C.JS_NewBool(c.ref, C.int(bv))}
+	return Value{ctx: ctx, ref: C.JS_NewBool(ctx.ref, C.int(bv))}
 }
 
-func (c Context) Int32(v int32) Value {
-	return Value{ctx: c.ref, ref: C.JS_NewInt32(c.ref, C.int32_t(v))}
+func (ctx *Context) Int32(v int32) Value {
+	return Value{ctx: ctx, ref: C.JS_NewInt32(ctx.ref, C.int32_t(v))}
 }
 
-func (c Context) Int64(v int64) Value {
-	return Value{ctx: c.ref, ref: C.JS_NewInt64(c.ref, C.int64_t(v))}
+func (ctx *Context) Int64(v int64) Value {
+	return Value{ctx: ctx, ref: C.JS_NewInt64(ctx.ref, C.int64_t(v))}
 }
 
-func (c Context) Uint32(v uint32) Value {
-	return Value{ctx: c.ref, ref: C.JS_NewUint32(c.ref, C.uint32_t(v))}
+func (ctx *Context) Uint32(v uint32) Value {
+	return Value{ctx: ctx, ref: C.JS_NewUint32(ctx.ref, C.uint32_t(v))}
 }
 
-func (c Context) BigUint64(v uint64) Value {
-	return Value{ctx: c.ref, ref: C.JS_NewBigUint64(c.ref, C.uint64_t(v))}
+func (ctx *Context) BigUint64(v uint64) Value {
+	return Value{ctx: ctx, ref: C.JS_NewBigUint64(ctx.ref, C.uint64_t(v))}
 }
 
-func (c Context) Float64(v float64) Value {
-	return Value{ctx: c.ref, ref: C.JS_NewFloat64(c.ref, C.double(v))}
+func (ctx *Context) Float64(v float64) Value {
+	return Value{ctx: ctx, ref: C.JS_NewFloat64(ctx.ref, C.double(v))}
 }
 
-func (c Context) String(v string) Value {
+func (ctx *Context) String(v string) Value {
 	ptr := C.CString(v)
 	defer C.free(unsafe.Pointer(ptr))
-	return Value{ctx: c.ref, ref: C.JS_NewString(c.ref, ptr)}
+	return Value{ctx: ctx, ref: C.JS_NewString(ctx.ref, ptr)}
 }
 
-func (c Context) Atom(v string) Atom {
+func (ctx *Context) Atom(v string) Atom {
 	ptr := C.CString(v)
 	defer C.free(unsafe.Pointer(ptr))
-	return Atom{ctx: c.ref, ref: C.JS_NewAtom(c.ref, ptr)}
+	return Atom{ctx: ctx, ref: C.JS_NewAtom(ctx.ref, ptr)}
 }
 
-func (c Context) eval(code string) Value {
-	return c.evalFile(code, "code")
+func (ctx *Context) eval(code string) Value {
+	return ctx.evalFile(code, "code")
 }
 
-func (c Context) evalFile(code, filename string) Value {
+func (ctx *Context) evalFile(code, filename string) Value {
 	codePtr := C.CString(code)
 	defer C.free(unsafe.Pointer(codePtr))
 
 	filenamePtr := C.CString(filename)
 	defer C.free(unsafe.Pointer(filenamePtr))
 
-	return Value{ctx: c.ref, ref: C.JS_Eval(c.ref, codePtr, C.size_t(len(code)), filenamePtr, C.int(0))}
+	return Value{ctx: ctx, ref: C.JS_Eval(ctx.ref, codePtr, C.size_t(len(code)), filenamePtr, C.int(0))}
 }
 
-func (c Context) Eval(code string) (Value, error) { return c.EvalFile(code, "code") }
+func (ctx *Context) Eval(code string) (Value, error) { return ctx.EvalFile(code, "code") }
 
-func (c Context) EvalFile(code, filename string) (Value, error) {
-	val := c.evalFile(code, filename)
+func (ctx *Context) EvalFile(code, filename string) (Value, error) {
+	val := ctx.evalFile(code, filename)
 	if val.IsException() {
-		return val, c.Exception().Error()
+		return val, ctx.Exception().Error()
 	}
 	return val, nil
 }
 
-func (c *Context) Globals() Value {
-	if c.globals == nil {
-		c.globals = &Value{
-			ctx: c.ref,
-			ref: C.JS_GetGlobalObject(c.ref),
+func (ctx *Context) Globals() Value {
+	if ctx.globals == nil {
+		ctx.globals = &Value{
+			ctx: ctx,
+			ref: C.JS_GetGlobalObject(ctx.ref),
 		}
 	}
-	return *c.globals
+	return *ctx.globals
 }
 
-func (c Context) Throw(v Value) Value {
-	return Value{ctx: c.ref, ref: C.JS_Throw(c.ref, v.ref)}
+func (ctx *Context) Throw(v Value) Value {
+	return Value{ctx: ctx, ref: C.JS_Throw(ctx.ref, v.ref)}
 }
 
-func (c Context) ThrowError(err error) Value { return c.Throw(c.Error(err)) }
+func (ctx *Context) ThrowError(err error) Value { return ctx.Throw(ctx.Error(err)) }
 
-func (c Context) ThrowSyntaxError(format string, args ...interface{}) Value {
+func (ctx *Context) ThrowSyntaxError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-	return Value{ctx: c.ref, ref: C.ThrowSyntaxError(c.ref, causePtr)}
+	return Value{ctx: ctx, ref: C.ThrowSyntaxError(ctx.ref, causePtr)}
 }
 
-func (c Context) ThrowTypeError(format string, args ...interface{}) Value {
+func (ctx *Context) ThrowTypeError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-	return Value{ctx: c.ref, ref: C.ThrowTypeError(c.ref, causePtr)}
+	return Value{ctx: ctx, ref: C.ThrowTypeError(ctx.ref, causePtr)}
 }
 
-func (c Context) ThrowReferenceError(format string, args ...interface{}) Value {
+func (ctx *Context) ThrowReferenceError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-	return Value{ctx: c.ref, ref: C.ThrowReferenceError(c.ref, causePtr)}
+	return Value{ctx: ctx, ref: C.ThrowReferenceError(ctx.ref, causePtr)}
 }
 
-func (c Context) ThrowRangeError(format string, args ...interface{}) Value {
+func (ctx *Context) ThrowRangeError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-	return Value{ctx: c.ref, ref: C.ThrowRangeError(c.ref, causePtr)}
+	return Value{ctx: ctx, ref: C.ThrowRangeError(ctx.ref, causePtr)}
 }
 
-func (c Context) ThrowInternalError(format string, args ...interface{}) Value {
+func (ctx *Context) ThrowInternalError(format string, args ...interface{}) Value {
 	cause := fmt.Sprintf(format, args...)
 	causePtr := C.CString(cause)
 	defer C.free(unsafe.Pointer(causePtr))
-	return Value{ctx: c.ref, ref: C.ThrowInternalError(c.ref, causePtr)}
+	return Value{ctx: ctx, ref: C.ThrowInternalError(ctx.ref, causePtr)}
 }
 
-func (c Context) Exception() Value {
-	return Value{ctx: c.ref, ref: C.JS_GetException(c.ref)}
+func (ctx *Context) Exception() Value {
+	return Value{ctx: ctx, ref: C.JS_GetException(ctx.ref)}
 }
 
-func (c Context) Object() Value {
-	return Value{ctx: c.ref, ref: C.JS_NewObject(c.ref)}
+func (ctx *Context) Object() Value {
+	return Value{ctx: ctx, ref: C.JS_NewObject(ctx.ref)}
 }
 
-func (c Context) Array() Value {
-	return Value{ctx: c.ref, ref: C.JS_NewArray(c.ref)}
+func (ctx *Context) Array() Value {
+	return Value{ctx: ctx, ref: C.JS_NewArray(ctx.ref)}
 }
 
 type Atom struct {
-	ctx *C.JSContext
+	ctx *Context
 	ref C.JSAtom
 }
 
 func (a Atom) String() string {
-	ptr := C.JS_AtomToCString(a.ctx, a.ref)
-	defer C.JS_FreeCString(a.ctx, ptr)
+	ptr := C.JS_AtomToCString(a.ctx.ref, a.ref)
+	defer C.JS_FreeCString(a.ctx.ref, ptr)
 	return C.GoString(ptr)
 }
 
 func (a Atom) Value() Value {
-	return Value{ctx: a.ctx, ref: C.JS_AtomToValue(a.ctx, a.ref)}
+	return Value{ctx: a.ctx, ref: C.JS_AtomToValue(a.ctx.ref, a.ref)}
 }
 
 type Value struct {
-	ctx *C.JSContext
+	ctx *Context
 	ref C.JSValue
 }
 
-func (v Value) Free() { C.JS_FreeValue(v.ctx, v.ref) }
+func (v Value) Free() { C.JS_FreeValue(v.ctx.ref, v.ref) }
 
-func (v Value) Context() *Context { return &Context{ref: v.ctx} }
+func (v Value) Context() *Context { return v.ctx }
 
-func (v Value) Bool() bool { return C.JS_ToBool(v.ctx, v.ref) == 1 }
+func (v Value) Bool() bool { return C.JS_ToBool(v.ctx.ref, v.ref) == 1 }
 
 func (v Value) String() string {
-	ptr := C.JS_ToCString(v.ctx, v.ref)
-	defer C.JS_FreeCString(v.ctx, ptr)
+	ptr := C.JS_ToCString(v.ctx.ref, v.ref)
+	defer C.JS_FreeCString(v.ctx.ref, ptr)
 	return C.GoString(ptr)
 }
 
 func (v Value) Int64() int64 {
 	val := C.int64_t(0)
-	C.JS_ToInt64(v.ctx, &val, v.ref)
+	C.JS_ToInt64(v.ctx.ref, &val, v.ref)
 	return int64(val)
 }
 
 func (v Value) Int32() int32 {
 	val := C.int32_t(0)
-	C.JS_ToInt32(v.ctx, &val, v.ref)
+	C.JS_ToInt32(v.ctx.ref, &val, v.ref)
 	return int32(val)
 }
 
 func (v Value) Uint32() uint32 {
 	val := C.uint32_t(0)
-	C.JS_ToUint32(v.ctx, &val, v.ref)
+	C.JS_ToUint32(v.ctx.ref, &val, v.ref)
 	return uint32(val)
 }
 
 func (v Value) Float64() float64 {
 	val := C.double(0)
-	C.JS_ToFloat64(v.ctx, &val, v.ref)
+	C.JS_ToFloat64(v.ctx.ref, &val, v.ref)
 	return float64(val)
 }
 
@@ -370,27 +373,27 @@ func (v Value) BigFloat() *big.Float {
 func (v Value) Get(name string) Value {
 	namePtr := C.CString(name)
 	defer C.free(unsafe.Pointer(namePtr))
-	return Value{ctx: v.ctx, ref: C.JS_GetPropertyStr(v.ctx, v.ref, namePtr)}
+	return Value{ctx: v.ctx, ref: C.JS_GetPropertyStr(v.ctx.ref, v.ref, namePtr)}
 }
 
 func (v Value) GetByAtom(atom Atom) Value {
-	return Value{ctx: v.ctx, ref: C.JS_GetProperty(v.ctx, v.ref, atom.ref)}
+	return Value{ctx: v.ctx, ref: C.JS_GetProperty(v.ctx.ref, v.ref, atom.ref)}
 }
 
 func (v Value) GetByUint32(idx uint32) Value {
-	return Value{ctx: v.ctx, ref: C.JS_GetPropertyUint32(v.ctx, v.ref, C.uint32_t(idx))}
+	return Value{ctx: v.ctx, ref: C.JS_GetPropertyUint32(v.ctx.ref, v.ref, C.uint32_t(idx))}
 }
 
 func (v Value) SetByAtom(atom Atom, val Value) {
-	C.JS_SetProperty(v.ctx, v.ref, atom.ref, val.ref)
+	C.JS_SetProperty(v.ctx.ref, v.ref, atom.ref, val.ref)
 }
 
 func (v Value) SetByInt64(idx int64, val Value) {
-	C.JS_SetPropertyInt64(v.ctx, v.ref, C.int64_t(idx), val.ref)
+	C.JS_SetPropertyInt64(v.ctx.ref, v.ref, C.int64_t(idx), val.ref)
 }
 
 func (v Value) SetByUint32(idx uint32, val Value) {
-	C.JS_SetPropertyUint32(v.ctx, v.ref, C.uint32_t(idx), val.ref)
+	C.JS_SetPropertyUint32(v.ctx.ref, v.ref, C.uint32_t(idx), val.ref)
 }
 
 func (v Value) Len() int64 { return v.Get("length").Int64() }
@@ -398,11 +401,11 @@ func (v Value) Len() int64 { return v.Get("length").Int64() }
 func (v Value) Set(name string, val Value) {
 	namePtr := C.CString(name)
 	defer C.free(unsafe.Pointer(namePtr))
-	C.JS_SetPropertyStr(v.ctx, v.ref, namePtr, val.ref)
+	C.JS_SetPropertyStr(v.ctx.ref, v.ref, namePtr, val.ref)
 }
 
 func (v Value) SetFunction(name string, fn Function) {
-	v.Set(name, v.Context().Function(fn))
+	v.Set(name, v.ctx.Function(fn))
 }
 
 type Error struct {
@@ -425,7 +428,7 @@ func (v Value) Error() error {
 }
 
 func (v Value) IsNumber() bool        { return C.JS_IsNumber(v.ref) == 1 }
-func (v Value) IsBigInt() bool        { return C.JS_IsBigInt(v.ctx, v.ref) == 1 }
+func (v Value) IsBigInt() bool        { return C.JS_IsBigInt(v.ctx.ref, v.ref) == 1 }
 func (v Value) IsBigFloat() bool      { return C.JS_IsBigFloat(v.ref) == 1 }
 func (v Value) IsBigDecimal() bool    { return C.JS_IsBigDecimal(v.ref) == 1 }
 func (v Value) IsBool() bool          { return C.JS_IsBool(v.ref) == 1 }
@@ -436,11 +439,11 @@ func (v Value) IsUninitialized() bool { return C.JS_IsUninitialized(v.ref) == 1 
 func (v Value) IsString() bool        { return C.JS_IsString(v.ref) == 1 }
 func (v Value) IsSymbol() bool        { return C.JS_IsSymbol(v.ref) == 1 }
 func (v Value) IsObject() bool        { return C.JS_IsObject(v.ref) == 1 }
-func (v Value) IsArray() bool         { return C.JS_IsArray(v.ctx, v.ref) == 1 }
+func (v Value) IsArray() bool         { return C.JS_IsArray(v.ctx.ref, v.ref) == 1 }
 
-func (v Value) IsError() bool       { return C.JS_IsError(v.ctx, v.ref) == 1 }
-func (v Value) IsFunction() bool    { return C.JS_IsFunction(v.ctx, v.ref) == 1 }
-func (v Value) IsConstructor() bool { return C.JS_IsConstructor(v.ctx, v.ref) == 1 }
+func (v Value) IsError() bool       { return C.JS_IsError(v.ctx.ref, v.ref) == 1 }
+func (v Value) IsFunction() bool    { return C.JS_IsFunction(v.ctx.ref, v.ref) == 1 }
+func (v Value) IsConstructor() bool { return C.JS_IsConstructor(v.ctx.ref, v.ref) == 1 }
 
 func (v Value) PropertyNames() ([]PropertyEnum, error) {
 	var (
@@ -448,7 +451,7 @@ func (v Value) PropertyNames() ([]PropertyEnum, error) {
 		size C.uint32_t
 	)
 
-	result := int(C.JS_GetOwnPropertyNames(v.ctx, &ptr, &size, v.ref, C.int(1<<0|1<<1|1<<2|1<<4|1<<5)))
+	result := int(C.JS_GetOwnPropertyNames(v.ctx.ref, &ptr, &size, v.ref, C.int(1<<0|1<<1|1<<2|1<<4|1<<5)))
 	if result < 0 {
 		return nil, errors.New("value does not contain properties")
 	}

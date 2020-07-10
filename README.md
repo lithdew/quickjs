@@ -84,12 +84,12 @@ func main() {
 
 	// Test setting and calling functions.
 
-	globals.Set("A", ctx.Function(func(ctx quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
+	globals.Set("A", ctx.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
 		fmt.Println("A got called!")
 		return ctx.Null()
 	}))
 
-	globals.Set("B", ctx.Function(func(ctx quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
+	globals.Set("B", ctx.Function(func(ctx *quickjs.Context, this quickjs.Value, args []quickjs.Value) quickjs.Value {
 		fmt.Println("B got called!")
 		return ctx.Null()
 	}))

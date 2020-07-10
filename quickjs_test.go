@@ -45,7 +45,7 @@ func TestFunctionThrowError(t *testing.T) {
 	expected := errors.New("expected error")
 
 	ctx := NewRuntime().NewContext()
-	ctx.Globals().SetFunction("A", func(ctx Context, this Value, args []Value) Value {
+	ctx.Globals().SetFunction("A", func(ctx *Context, this Value, args []Value) Value {
 		return ctx.ThrowError(expected)
 	})
 
@@ -61,7 +61,7 @@ func TestFunction(t *testing.T) {
 	A := make(chan struct{})
 	B := make(chan struct{})
 
-	ctx.Globals().Set("A", ctx.Function(func(ctx Context, this Value, args []Value) Value {
+	ctx.Globals().Set("A", ctx.Function(func(ctx *Context, this Value, args []Value) Value {
 		require.Len(t, args, 4)
 		require.True(t, args[0].IsString() && args[0].String() == "hello world!")
 		require.True(t, args[1].IsNumber() && args[1].Int32() == 1)
@@ -73,7 +73,7 @@ func TestFunction(t *testing.T) {
 		return ctx.String("A says hello")
 	}))
 
-	ctx.Globals().Set("B", ctx.Function(func(ctx Context, this Value, args []Value) Value {
+	ctx.Globals().Set("B", ctx.Function(func(ctx *Context, this Value, args []Value) Value {
 		require.Len(t, args, 0)
 
 		close(B)
