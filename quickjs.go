@@ -95,7 +95,10 @@ func restoreFuncPtr(ptr int64) funcEntry {
 
 //export proxy
 func proxy(ctx *C.JSContext, thisVal C.JSValueConst, argc C.int, argv *C.JSValueConst) C.JSValue {
-	refs := (*[1 << 30]C.JSValueConst)(unsafe.Pointer(argv))[:argc:argc]
+	// The maximum capacity of the following two slices is limited to (2^29)-1 to remain compatible
+	// with 32-bit platforms. The size of a `*C.char` (a pointer) is 4 Byte on a 32-bit system
+	// and (2^29)*4 == math.MaxInt32 + 1. -- See issue golang/go#13656
+	refs := (*[(1 << 29) - 1]C.JSValueConst)(unsafe.Pointer(argv))[:argc:argc]
 
 	id := C.int64_t(0)
 	C.JS_ToInt64(ctx, &id, refs[0])
@@ -474,7 +477,7 @@ func (v Value) PropertyNames() ([]PropertyEnum, error) {
 	}
 	defer C.js_free(v.ctx.ref, unsafe.Pointer(ptr))
 
-	entries := (*[1 << 30]C.JSPropertyEnum)(unsafe.Pointer(ptr))
+	entries := (*[(1 << 29) - 1]C.JSPropertyEnum)(unsafe.Pointer(ptr))
 
 	names := make([]PropertyEnum, uint32(size))
 
