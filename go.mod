@@ -1,4 +1,4 @@
-module github.com/elsaland/quickjs
+module github.com/lithdew/quickjs
 
 go 1.14
 
