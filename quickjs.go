@@ -152,6 +152,24 @@ func (ctx *Context) Function(fn Function) Value {
 	return Value{ctx: ctx, ref: C.JS_Call(ctx.ref, val.ref, ctx.Null().ref, C.int(len(args)), &args[0])}
 }
 
+func (ctx *Context) JsFunction(this Value, fn Value, args []Value) Value {
+	if fn.IsFunction() {
+		var _argsptr *C.JSValue = nil
+		if len(args) != 0 {
+			_args := make([]C.JSValue, len(args))
+			for i := 0; i < len(args); i++ {
+				_args[i] = args[i].ref
+			}
+
+			_argsptr = &_args[0]
+		}
+
+		return Value{ctx: ctx, ref: C.JS_Call(ctx.ref, fn.ref, this.ref, C.int(len(args)), _argsptr)}
+	} else {
+		return ctx.Error(errors.New("fn must be function"))
+	}
+}
+
 func (ctx *Context) Null() Value {
 	return Value{ctx: ctx, ref: C.JS_NewNull()}
 }

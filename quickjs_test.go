@@ -3,10 +3,11 @@ package quickjs
 import (
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	stdruntime "runtime"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestObject(t *testing.T) {
@@ -125,6 +126,27 @@ func TestFunction(t *testing.T) {
 
 	require.True(t, result.IsNumber() && result.Uint32() == 256)
 	<-B
+}
+
+func TestJsFunction(t *testing.T) {
+	runtime := NewRuntime()
+	defer runtime.Free()
+
+	context := runtime.NewContext()
+	defer context.Free()
+
+	context.Globals().SetFunction("Callback", func(ctx *Context, this Value, args []Value) Value {
+		require.Len(t, args, 1)
+		require.True(t, args[0].IsFunction())
+
+		return context.JsFunction(context.Null(), args[0], []Value{context.String("args test")})
+	})
+
+	result, err := context.Eval(`Callback(function(args){return args})`)
+	require.NoError(t, err)
+	defer result.Free()
+
+	require.True(t, result.IsString() && result.String() == "args test")
 }
 
 func TestConcurrency(t *testing.T) {
