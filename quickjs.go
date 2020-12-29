@@ -16,7 +16,20 @@ import (
 #cgo CFLAGS: -fno-asynchronous-unwind-tables
 #cgo LDFLAGS: -lm -lpthread
 
-#include "bridge.h"
+#include <stdlib.h>
+#include "quickjs.h"
+
+extern JSValue proxy(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv);
+
+static JSValue JS_NewNull() { return JS_NULL; }
+static JSValue JS_NewUndefined() { return JS_UNDEFINED; }
+static JSValue JS_NewUninitialized() { return JS_UNINITIALIZED; }
+
+static JSValue ThrowSyntaxError(JSContext *ctx, const char *fmt) { return JS_ThrowSyntaxError(ctx, "%s", fmt); }
+static JSValue ThrowTypeError(JSContext *ctx, const char *fmt) { return JS_ThrowTypeError(ctx, "%s", fmt); }
+static JSValue ThrowReferenceError(JSContext *ctx, const char *fmt) { return JS_ThrowReferenceError(ctx, "%s", fmt); }
+static JSValue ThrowRangeError(JSContext *ctx, const char *fmt) { return JS_ThrowRangeError(ctx, "%s", fmt); }
+static JSValue ThrowInternalError(JSContext *ctx, const char *fmt) { return JS_ThrowInternalError(ctx, "%s", fmt); }
 */
 import "C"
 
@@ -143,7 +156,7 @@ func (ctx *Context) Function(fn Function) Value {
 	if ctx.proxy == nil {
 		ctx.proxy = &Value{
 			ctx: ctx,
-			ref: C.JS_NewCFunction(ctx.ref, (*C.JSCFunction)(unsafe.Pointer(C.InvokeProxy)), nil, C.int(0)),
+			ref: C.JS_NewCFunction(ctx.ref, (*C.JSCFunction)(unsafe.Pointer(C.proxy)), nil, C.int(0)),
 		}
 	}
 
