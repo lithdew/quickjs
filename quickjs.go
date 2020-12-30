@@ -11,7 +11,7 @@ import (
 )
 
 /*
-#cgo CFLAGS: -I./3rdparty/include/quickjs/
+#cgo CFLAGS: -I./3rdparty/include/quickjs
 #cgo LDFLAGS: -L${SRCDIR}/3rdparty/lib/quickjs -lquickjs
 
 #include <stdlib.h>
