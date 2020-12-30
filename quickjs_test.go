@@ -139,12 +139,7 @@ func TestJsFunction(t *testing.T) {
 		require.Len(t, args, 1)
 		require.True(t, args[0].IsFunction())
 
-		fnargs := []Value{context.String("args test")}
-		for _, v := range fnargs {
-			defer v.Free()
-		}
-
-		return context.JsFunction(context.Null(), args[0], fnargs)
+		return context.JsFunction(context.Null(), args[0], []Value{context.String("args test")})
 	})
 
 	result, err := context.Eval(`Callback(function(args){return args})`)
