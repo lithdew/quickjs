@@ -1,9 +1,9 @@
 # modify Makefile
 
-cd quickjs
-open Makefile
-find prefix=/usr/local
-replace prefix=../
+1. cd quickjs
+2. open Makefile
+3. find prefix=/usr/local
+4. replace prefix=../
 
 # build quickjs
 
